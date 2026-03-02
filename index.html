@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Real Couple Challenge</title>
+    <style>
+        :root {
+            --neon-pink: #ff2e63;
+            --neon-teal: #08f7fe;
+            --dark-bg: #1a1a2e;
+            --card-bg: rgba(255, 255, 255, 0.1);
+            --yellow-face: #f9d71c;
+            --correct-green: #00ff88;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: radial-gradient(circle at center, #16213e 0%, #0f3460 100%);
+            color: white; margin: 0; height: 100vh;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            overflow: hidden;
+        }
+
+        #start-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100;
+        }
+
+        .game-container {
+            background: var(--card-bg); backdrop-filter: blur(10px);
+            padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
+            width: 460px; display: flex; flex-direction: column; gap: 10px;
+        }
+
+        .row {
+            display: flex; justify-content: space-between; padding: 8px;
+            border-radius: 12px; transition: 0.3s; border: 2px solid transparent;
+            background: rgba(255,255,255,0.05); position: relative;
+        }
+
+        .row.locked-row { background: rgba(255, 46, 99, 0.4); border-color: var(--neon-pink); box-shadow: 0 0 20px var(--neon-pink); }
+        .row.wrong-row { background: rgba(0, 255, 136, 0.4); border-color: var(--correct-green); box-shadow: 0 0 15px var(--correct-green); }
+
+        .person-card { display: flex; align-items: center; padding: 10px; border-radius: 10px; width: 190px; background: rgba(0,0,0,0.3); pointer-events: none; }
+        .draggable { cursor: grab; border: 1.5px solid var(--neon-teal); pointer-events: auto !important; }
+        .avatar { width: 35px; height: 35px; border-radius: 50%; margin-right: 12px; border: 1.5px solid #222; background: var(--yellow-face); }
+
+        .controls { margin-top: 20px; text-align: center; }
+        button { padding: 12px 35px; font-size: 16px; font-weight: bold; text-transform: uppercase; cursor: pointer; border: none; border-radius: 50px; transition: 0.3s; }
+        #main-btn { background: var(--neon-teal); color: #1a1a2e; box-shadow: 0 0 10px var(--neon-teal); }
+        button:disabled { background: #555; opacity: 0.5; box-shadow: none; }
+
+        #feedback { margin-top: 15px; font-weight: bold; min-height: 1.2em; font-size: 1.2rem; text-shadow: 0 0 5px black; }
+        #guess-count { color: #aaa; margin: 5px 0; font-size: 0.9rem;}
+
+        .explosion-particle {
+            position: absolute; width: 8px; height: 8px; border-radius: 50%;
+            pointer-events: none; animation: fly 0.8s ease-out forwards;
+        }
+        @keyframes fly { to { transform: translate(var(--x), var(--y)); opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<div id="start-overlay" onclick="startGame()">
+    <h1 style="color: var(--neon-teal); letter-spacing: 5px; margin-bottom: 20px;">THE REAL COUPLE</h1>
+    <button style="background: var(--neon-pink); color: white; padding: 20px 50px; font-size: 22px; box-shadow: 0 0 20px var(--neon-pink);">PLAY NOW</button>
+</div>
+
+<div class="game-container" id="game-board"></div>
+
+<div class="controls">
+    <p id="guess-count">Guesses remaining: 3</p>
+    <button id="main-btn" onclick="handleButtonClick()">Check Pairs</button>
+    <div id="feedback"></div>
+</div>
+
+<script>
+    const bgMusic = new Audio('jazz.mp3'); 
+    bgMusic.loop = true;
+    let audioCtx;
+
+    const truePairs = { "Damon": "Lucy", "Will": "Rob", "Anjeli": "Brian", "Claire": "Bob", "Ryan": "Barry", "Katie": "Jane" };
+    const leads = Object.keys(truePairs);
+    let partners = Object.values(truePairs);
+    let guessesMade = 0;
+    let lockedIndex = null;
+
+    // Shuffle
+    partners.sort(() => Math.random() - 0.5);
+
+    function startGame() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        bgMusic.play().catch(() => {}); 
+        document.getElementById('start-overlay').style.display = 'none';
+        renderBoard();
+    }
+
+    function renderBoard() {
+        const board = document.getElementById('game-board');
+        board.innerHTML = '';
+        leads.forEach((lead, i) => {
+            const isLocked = (lockedIndex === i);
+            board.innerHTML += `
+                <div class="row ${isLocked ? 'locked-row' : ''}" id="row-${i}">
+                    <div class="person-card">
+                        <img src="https://api.dicebear.com/7.x/adventurer/svg?seed=${lead}&backgroundColor=f9d71c" class="avatar">
+                        <span>${lead}</span>
+                    </div>
+                    <div class="person-card draggable" 
+                         id="drag-${i}"
+                         draggable="${guessesMade < 2}" 
+                         ondragstart="onDragStart(event)" 
+                         ondragover="onDragOver(event)" 
+                         ondrop="onDrop(event)"
+                         ondblclick="handleLock(${i})">
+                        <img src="https://api.dicebear.com/7.x/adventurer/svg?seed=${partners[i]}&backgroundColor=f9d71c" class="avatar">
+                        <span>${partners[i]}</span>
+                    </div>
+                </div>`;
+        });
+    }
+
+    function playTone(freq, type, duration, volume = 0.2) {
+        if (!audioCtx) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        if(type === 'win-up') {
+            osc.type = 'triangle';
+            osc.frequency.exponentialRampToValueAtTime(freq * 4, audioCtx.currentTime + duration);
+        }
+        gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + duration);
+    }
+
+    // Drag Logic Fix
+    function onDragStart(e) { e.dataTransfer.setData("text/plain", e.target.id); }
+    function onDragOver(e) { e.preventDefault(); }
+    function onDrop(e) {
+        e.preventDefault();
+        const draggedId = e.dataTransfer.getData("text/plain");
+        const draggedIdx = draggedId.split('-')[1];
+        const targetIdx = e.target.id.split('-')[1];
+
+        if (draggedIdx !== undefined && targetIdx !== undefined) {
+            let temp = partners[draggedIdx];
+            partners[draggedIdx] = partners[targetIdx];
+            partners[targetIdx] = temp;
+            playTone(400, 'sine', 0.1, 0.05);
+            renderBoard();
+        }
+    }
+
+    function handleLock(index) {
+        if (guessesMade === 2) { 
+            lockedIndex = index;
+            playTone(800, 'sine', 0.1, 0.1);
+            renderBoard();
+        }
+    }
+
+    function handleButtonClick() {
+        if (guessesMade < 2) {
+            playTone(500, 'sine', 0.2, 0.1);
+            checkMidway();
+        } else {
+            if (lockedIndex === null) alert("Double-click a row to lock in your final choice!");
+            else if (confirm("Lock this couple?")) revealFinal();
+        }
+    }
+
+    function checkMidway() {
+        guessesMade++;
+        let count = 0;
+        partners.forEach((p, i) => { if(truePairs[leads[i]] === p) count++; });
+        const feedback = document.getElementById('feedback');
+        if (guessesMade === 2) {
+            feedback.innerText = `You have ${count} correct. ONE GUESS LEFT!`;
+            document.getElementById('main-btn').innerText = "LOCK & REVEAL";
+        } else {
+            feedback.innerText = `${count} couples are correct.`;
+        }
+        document.getElementById('guess-count').innerText = `Guesses remaining: ${3 - guessesMade}`;
+    }
+
+    function revealFinal() {
+        const isCorrect = truePairs[leads[lockedIndex]] === partners[lockedIndex];
+        const feedback = document.getElementById('feedback');
+        if (isCorrect) {
+            feedback.innerHTML = "🏆 CORRECT! A REAL COUPLE! 🏆";
+            feedback.style.color = "var(--correct-green)";
+            playTone(300, 'win-up', 1.0, 0.4);
+            triggerExplosion(lockedIndex);
+        } else {
+            feedback.innerHTML = "❌ INCORRECT COUPLE! ❌";
+            feedback.style.color = "var(--neon-pink)";
+            playTone(110, 'sawtooth', 0.8, 0.4);
+            document.getElementById(`row-${lockedIndex}`).classList.add('wrong-row');
+        }
+        document.getElementById('main-btn').disabled = true;
+    }
+
+    function triggerExplosion(index) {
+        const row = document.getElementById(`row-${index}`);
+        for(let i=0; i<40; i++) {
+            const p = document.createElement('div');
+            p.className = 'explosion-particle';
+            p.style.backgroundColor = i % 2 === 0 ? 'var(--neon-pink)' : 'var(--neon-teal)';
+            p.style.left = '50%'; p.style.top = '50%';
+            p.style.setProperty('--x', (Math.random() - 0.5) * 500 + 'px');
+            p.style.setProperty('--y', (Math.random() - 0.5) * 500 + 'px');
+            row.appendChild(p);
+            setTimeout(() => p.remove(), 800);
+        }
+    }
+</script>
+</body>
+</html>
