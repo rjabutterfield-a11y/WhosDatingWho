@@ -10,7 +10,7 @@
             --neon-teal: #08f7fe;
             --dark-bg: #1a1a2e;
             --card-bg: rgba(255, 255, 255, 0.1);
-            --yellow-face: #f9d71c;
+            --yellow-theme: #f9d71c;
             --correct-green: #00ff88;
         }
 
@@ -31,21 +31,28 @@
         .game-container {
             background: var(--card-bg); backdrop-filter: blur(10px);
             padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
-            width: 460px; display: flex; flex-direction: column; gap: 10px;
+            width: 480px; display: flex; flex-direction: column; gap: 10px;
         }
 
         .row {
             display: flex; justify-content: space-between; padding: 8px;
             border-radius: 12px; transition: 0.3s; border: 2px solid transparent;
-            background: rgba(255,255,255,0.05); position: relative;
+            background: rgba(255,255,255,0.05); position: relative; gap: 10px;
         }
 
         .row.locked-row { background: rgba(255, 46, 99, 0.4); border-color: var(--neon-pink); box-shadow: 0 0 20px var(--neon-pink); }
         .row.wrong-row { background: rgba(0, 255, 136, 0.4); border-color: var(--correct-green); box-shadow: 0 0 15px var(--correct-green); }
 
-        .person-card { display: flex; align-items: center; padding: 10px; border-radius: 10px; width: 190px; background: rgba(0,0,0,0.3); pointer-events: none; }
-        .draggable { cursor: grab; border: 1.5px solid var(--neon-teal); pointer-events: auto !important; }
-        .avatar { width: 35px; height: 35px; border-radius: 50%; margin-right: 12px; border: 1.5px solid #222; background: var(--yellow-face); }
+        .person-card { 
+            display: flex; align-items: center; padding: 10px; border-radius: 10px; 
+            width: 190px; background: rgba(0,0,0,0.4); 
+            cursor: grab; border: 1.5px solid var(--neon-teal);
+            transition: transform 0.2s;
+        }
+        .person-card:active { cursor: grabbing; transform: scale(1.05); }
+        
+        .avatar { width: 35px; height: 35px; border-radius: 8px; margin-right: 12px; border: 1.5px solid #222; background: var(--yellow-theme); pointer-events: none; }
+        .person-card span { pointer-events: none; font-size: 14px; font-weight: 500; }
 
         .controls { margin-top: 20px; text-align: center; }
         button { padding: 12px 35px; font-size: 16px; font-weight: bold; text-transform: uppercase; cursor: pointer; border: none; border-radius: 50px; transition: 0.3s; }
@@ -55,10 +62,7 @@
         #feedback { margin-top: 15px; font-weight: bold; min-height: 1.2em; font-size: 1.2rem; text-shadow: 0 0 5px black; }
         #guess-count { color: #aaa; margin: 5px 0; font-size: 0.9rem;}
 
-        .explosion-particle {
-            position: absolute; width: 8px; height: 8px; border-radius: 50%;
-            pointer-events: none; animation: fly 0.8s ease-out forwards;
-        }
+        .explosion-particle { position: absolute; width: 8px; height: 8px; border-radius: 50%; pointer-events: none; animation: fly 0.8s ease-out forwards; }
         @keyframes fly { to { transform: translate(var(--x), var(--y)); opacity: 0; } }
     </style>
 </head>
@@ -82,47 +86,50 @@
     bgMusic.loop = true;
     let audioCtx;
 
-    const truePairs = { "Damon": "Lucy", "Will": "Rob", "Anjeli": "Brian", "Claire": "Bob", "Ryan": "Barry", "Katie": "Jane" };
-    const leads = Object.keys(truePairs);
-    let partners = Object.values(truePairs);
+    const couples = [
+        ["Damon", "Lucy"], ["Will", "Rob"], ["Anjeli", "Brian"], 
+        ["Claire", "Bob"], ["Ryan", "Barry"], ["Katie", "Jane"]
+    ];
+
+    // Create a flat list of all 12 players
+    let allPlayers = couples.flat();
     let guessesMade = 0;
     let lockedIndex = null;
-
-    // Shuffle
-    partners.sort(() => Math.random() - 0.5);
 
     function startGame() {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         bgMusic.play().catch(() => {}); 
         document.getElementById('start-overlay').style.display = 'none';
+        
+        // Shuffle all 12 players into random positions
+        allPlayers.sort(() => Math.random() - 0.5);
         renderBoard();
     }
 
     function renderBoard() {
         const board = document.getElementById('game-board');
         board.innerHTML = '';
-        leads.forEach((lead, i) => {
+        
+        for (let i = 0; i < 6; i++) {
             const isLocked = (lockedIndex === i);
+            const p1 = allPlayers[i * 2];
+            const p2 = allPlayers[i * 2 + 1];
+
             board.innerHTML += `
-                <div class="row ${isLocked ? 'locked-row' : ''}" id="row-${i}">
-                    <div class="person-card">
-                        <img src="https://api.dicebear.com/7.x/adventurer/svg?seed=${lead}&backgroundColor=f9d71c" class="avatar">
-                        <span>${lead}</span>
+                <div class="row ${isLocked ? 'locked-row' : ''}" id="row-${i}" ondblclick="handleLock(${i})">
+                    <div class="person-card" id="card-${i * 2}" draggable="${guessesMade < 2}" ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)">
+                        <img src="https://api.dicebear.com/7.x/bottts/svg?seed=${p1}&backgroundColor=f9d71c" class="avatar">
+                        <span>${p1}</span>
                     </div>
-                    <div class="person-card draggable" 
-                         id="drag-${i}"
-                         draggable="${guessesMade < 2}" 
-                         ondragstart="onDragStart(event)" 
-                         ondragover="onDragOver(event)" 
-                         ondrop="onDrop(event)"
-                         ondblclick="handleLock(${i})">
-                        <img src="https://api.dicebear.com/7.x/adventurer/svg?seed=${partners[i]}&backgroundColor=f9d71c" class="avatar">
-                        <span>${partners[i]}</span>
+                    <div class="person-card" id="card-${i * 2 + 1}" draggable="${guessesMade < 2}" ondragstart="onDragStart(event)" ondragover="onDragOver(event)" ondrop="onDrop(event)">
+                        <img src="https://api.dicebear.com/7.x/bottts/svg?seed=${p2}&backgroundColor=f9d71c" class="avatar">
+                        <span>${p2}</span>
                     </div>
                 </div>`;
-        });
+        }
     }
 
+    // Sound Engine
     function playTone(freq, type, duration, volume = 0.2) {
         if (!audioCtx) return;
         if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -140,19 +147,19 @@
         osc.start(); osc.stop(audioCtx.currentTime + duration);
     }
 
-    // Drag Logic Fix
+    // Improved Drag/Drop for any card to any card
     function onDragStart(e) { e.dataTransfer.setData("text/plain", e.target.id); }
     function onDragOver(e) { e.preventDefault(); }
     function onDrop(e) {
         e.preventDefault();
         const draggedId = e.dataTransfer.getData("text/plain");
-        const draggedIdx = draggedId.split('-')[1];
-        const targetIdx = e.target.id.split('-')[1];
+        const sourceIdx = parseInt(draggedId.split('-')[1]);
+        const targetIdx = parseInt(e.target.id.split('-')[1]);
 
-        if (draggedIdx !== undefined && targetIdx !== undefined) {
-            let temp = partners[draggedIdx];
-            partners[draggedIdx] = partners[targetIdx];
-            partners[targetIdx] = temp;
+        if (!isNaN(sourceIdx) && !isNaN(targetIdx)) {
+            let temp = allPlayers[sourceIdx];
+            allPlayers[sourceIdx] = allPlayers[targetIdx];
+            allPlayers[targetIdx] = temp;
             playTone(400, 'sine', 0.1, 0.05);
             renderBoard();
         }
@@ -171,35 +178,52 @@
             playTone(500, 'sine', 0.2, 0.1);
             checkMidway();
         } else {
-            if (lockedIndex === null) alert("Double-click a row to lock in your final choice!");
-            else if (confirm("Lock this couple?")) revealFinal();
+            if (lockedIndex === null) alert("Double-click a row to lock in that pair!");
+            else if (confirm("Lock this couple for the final reveal?")) revealFinal();
         }
     }
 
     function checkMidway() {
         guessesMade++;
-        let count = 0;
-        partners.forEach((p, i) => { if(truePairs[leads[i]] === p) count++; });
+        let correctCount = 0;
+        
+        // Loop through each row and check if the pair exists in our couples list
+        for (let i = 0; i < 6; i++) {
+            const p1 = allPlayers[i * 2];
+            const p2 = allPlayers[i * 2 + 1];
+            
+            if (isRealCouple(p1, p2)) correctCount++;
+        }
+
         const feedback = document.getElementById('feedback');
         if (guessesMade === 2) {
-            feedback.innerText = `You have ${count} correct. ONE GUESS LEFT!`;
+            feedback.innerText = `After guess 2: ${correctCount} correct. FINAL LOCK-IN!`;
             document.getElementById('main-btn').innerText = "LOCK & REVEAL";
         } else {
-            feedback.innerText = `${count} couples are correct.`;
+            feedback.innerText = `${correctCount} couples are correct.`;
         }
         document.getElementById('guess-count').innerText = `Guesses remaining: ${3 - guessesMade}`;
     }
 
+    function isRealCouple(n1, n2) {
+        return couples.some(pair => 
+            (pair[0] === n1 && pair[1] === n2) || (pair[0] === n2 && pair[1] === n1)
+        );
+    }
+
     function revealFinal() {
-        const isCorrect = truePairs[leads[lockedIndex]] === partners[lockedIndex];
+        const p1 = allPlayers[lockedIndex * 2];
+        const p2 = allPlayers[lockedIndex * 2 + 1];
+        const correct = isRealCouple(p1, p2);
+
         const feedback = document.getElementById('feedback');
-        if (isCorrect) {
-            feedback.innerHTML = "🏆 CORRECT! A REAL COUPLE! 🏆";
+        if (correct) {
+            feedback.innerHTML = `🏆 CORRECT! ${p1} & ${p2} are a couple! 🏆`;
             feedback.style.color = "var(--correct-green)";
             playTone(300, 'win-up', 1.0, 0.4);
             triggerExplosion(lockedIndex);
         } else {
-            feedback.innerHTML = "❌ INCORRECT COUPLE! ❌";
+            feedback.innerHTML = `❌ INCORRECT! ${p1} & ${p2} are fake! ❌`;
             feedback.style.color = "var(--neon-pink)";
             playTone(110, 'sawtooth', 0.8, 0.4);
             document.getElementById(`row-${lockedIndex}`).classList.add('wrong-row');
